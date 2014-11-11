@@ -1,0 +1,317 @@
+
+# Project manager
+
+# This project manager allows you to have a quick way to switch between several different work environments
+# Source this file to enable it
+# Projects config is stored on a centralized file
+# Each project contains a local bash configuration, sourced when setting it
+#  
+# run 'bashject help' to get help
+#
+# Configuration defaults
+
+_bashject_get_config_default() {
+    local BASHJECT_PRJ_STORE_DEFAULT=${HOME}/work/.projects
+    local BASHJECT_PRJ_FILE_DEFAULT=".prj_env"
+    local BASHJECT_CHANGE_PROMPT_DEFAULT="1"
+    local BASHJECT_ALIAS_DEFAULT=""
+    local BASHJECT_TMP_DEFAULT="/tmp/bashject.tmp"
+    local VAR="BASHJECT_$1_DEFAULT"
+    echo ${!VAR}
+}
+
+# Configuration values
+
+BASHJECT_PRJ_STORE=${BASHJECT_PRJ_STORE:-$(_bashject_get_config_default PRJ_STORE)}
+BASHJECT_PRJ_FILE=${BASHJECT_PRJ_FILE:-$(_bashject_get_config_default PRJ_FILE)}
+BASHJECT_CHANGE_PROMPT=${BASHJECT_CHANGE_PROMPT:-$(_bashject_get_config_default CHANGE_PROMPT)}
+BASHJECT_ALIAS=${BASHJECT_ALIAS:-$(_bashject_get_config_default ALIAS)}
+BASHJECT_TMP=${BASHJECT_TMP:-$(_bashject_get_config_default TMP)}
+
+function _bashject_help() {
+    local BASHJECT_HELP_ADD="bashject a|add      name path     # Adds a project"
+    local BASHJECT_HELP_SET="bashject s|set      name          # Enter a project"
+    local BASHJECT_HELP_SOURCE="bashject source     name          # Source the project file of the specified project (useful to handle common envs)"
+    local BASHJECT_HELP_EDIT="bashject edit       name          # Edit the project file of the specified project with {EDITOR}"
+    local BASHJECT_HELP_REMOVE="bashject rm|remove  name          # Remove the project (no filesystem modifications)"
+    local BASHJECT_HELP_RENAME="bashject rename     old    new    # Rename the project (no filesystem modifications)"
+    local BASHJECT_HELP_PATH="bashject path       name          # Echoes a project's path"
+    local BASHJECT_HELP_NAMES="bashject names                    # Echoes all projects, separated by whitespaces"
+    local BASHJECT_HELP_LIST="bashject list                     # Echoes all projects, separated by newlines (useful with dmenu, for example)"
+    local BASHJECT_HELP_CD="bashject cd                       # cd to the current project root path"
+    local BASHJECT_HELP_HELP="bashject help       [cmd]         # Display global or specific command help"
+    local BASHJECT_HELP=""
+
+    read -d '' BASHJECT_HELP << EOF
+    Usage:
+        - Add a project with 'bashject add name path'
+        - Enter a project with 'bashject set name'
+        - Customize his environment with 'bashject edit name' (or editing his {BASHJECT_PRJ_DIR}/{BASHJECT_PRJ_FILE})
+
+    Exported vars:
+        - BASHJECT_PRJ_NAME: name of the project
+        - BASHJECT_PRJ_PATH: path to the root of the project
+
+    Commands:
+        - ${BASHJECT_HELP_ADD}
+        - ${BASHJECT_HELP_SET}
+        - ${BASHJECT_HELP_SOURCE}
+        - ${BASHJECT_HELP_EDIT}
+        - ${BASHJECT_HELP_REMOVE}
+        - ${BASHJECT_HELP_RENAME}
+        - ${BASHJECT_HELP_PATH}
+        - ${BASHJECT_HELP_NAMES}
+        - ${BASHJECT_HELP_LIST}
+        - ${BASHJECT_HELP_CD}
+        - ${BASHJECT_HELP_HELP}
+
+    Configuration (to override values, define them before sourcing this file)
+        - BASHJECT_PRJ_STORE                # File in which we store all projects configuration  (default: '${BASHJECT_PRJ_STORE_DEFAULT}', current: '${BASHJECT_PRJ_STORE}')
+        - BASHJECT_PRJ_FILE                 # Name of the project file, created at his root and sourced on 'bashject set'  (default: '${BASHJECT_PRJ_FILE_DEFAULT}', current: '${BASHJECT_PRJ_FILE}')
+        - BASHJECT_CHANGE_PROMPT            # 1 to change the prompt to '[ BASHJECT_PRJ_NAME ] PS1' > on 'bashject set'  (default: '${BASHJECT_CHANGE_PROMPT_DEFAULT}', current: '${BASHJECT_CHANGE_PROMPT}')
+        - BASHJECT_ALIAS                    # Name of an alias for bashject to define (i.e: 'bj'), autocompletion will be handled (default: '${BASHJECT_ALIAS_DEFAULT}', current: '${BASHJECT_ALIAS}')
+        - BASHJECT_TMP                      # Temp file used for rename and remove operations (default: '${BASHJECT_TMP_DEFAULT}', current: '${BASHJECT_TMP}')
+EOF
+
+    if [ -z $1 ]; then 
+        echo -e "${BASHJECT_HELP}" >&2
+    else
+        case "$1" in
+            a|add)       echo -e "${BASHJECT_HELP_ADD}" ;;
+            s|set)       echo -e "${BASHJECT_HELP_SET}" ;;
+            source)      echo -e "${BASHJECT_HELP_SOURCE}" ;;
+            e|edit)      echo -e "${BASHJECT_HELP_EDIT}" ;;
+            rm|remove)   echo -e "${BASHJECT_HELP_REMOVE}" ;;
+            rename)      echo -e "${BASHJECT_HELP_RENAME}" ;;
+            path)        echo -e "${BASHJECT_HELP_PATH}" ;;
+            names)       echo -e "${BASHJECT_HELP_NAMES}" ;;
+            list)        echo -e "${BASHJECT_HELP_LIST}" ;;
+            cd)          echo -e "${BASHJECT_HELP_CD}" ;;
+            help)        echo -e "${BASHJECT_HELP_HELP}" ;;
+            *)
+                echo "Unknown command: $1" >&2
+                return 1
+                ;;
+        esac
+    fi
+}
+
+
+function _bashject_get_commands() {
+    echo "help add set source remove rename edit path names list cd"
+}
+
+# Real stuff
+_bashject_add_project() {
+    if [ "$#" -eq "2" ]; then
+        local name=$1
+        local path=$(readlink -f $2)
+        echo "$name $path" >> ${BASHJECT_PRJ_STORE}
+        if [ ! -f ${path}/${BASHJECT_PRJ_FILE} ]; then
+            echo "Creating ${path}/${BASHJECT_PRJ_FILE}"
+            echo "# Project ${name} " > ${path}/${BASHJECT_PRJ_FILE}
+        fi
+    else
+        _bashject_help "add"
+    fi
+}
+
+_bashject_failed_path() {
+    echo "No project named '$1'." >&2
+    echo "Similar projects: " >&2
+    for name in $(compgen -W "$(_bashject_get_project_names)" -- $1); do
+        echo "  - $name" >&2
+    done
+}
+
+_bashject_get_project_path() {
+    if [ -f ${BASHJECT_PRJ_STORE} ]; then
+        while read name path; do
+            if [ "$1" = "$name" ]; then
+                echo $path
+                return 0
+            fi
+        done < ${BASHJECT_PRJ_STORE}
+    fi
+    return 1
+}
+
+_bashject_source_project() {
+    local path=$(_bashject_get_project_path $1)
+    local old_name=$BASHJECT_PRJ_NAME
+    local old_dir=$BASHJECT_PRJ_DIR
+    if [ ! -z "$path" ]; then
+        export BASHJECT_PRJ_NAME=$1
+        export BASHJECT_PRJ_DIR=$(_bashject_get_project_path $BASHJECT_PRJ_NAME)
+        source $path/${BASHJECT_PRJ_FILE}
+        export BASHJECT_PRJ_NAME=$old_name
+        export BASHJECT_PRJ_DIR=$old_dir
+        return 0
+    else
+        _bashject_failed_path $1
+    fi
+    return 1
+}
+
+_bashject_edit_project() {
+    local path=$(_bashject_get_project_path $1)
+    if [ ! -z "$path" ]; then
+        ${EDITOR} $path/${BASHJECT_PRJ_FILE}
+        return 0
+    else
+        _bashject_failed_path $1
+    fi
+    return 1
+}
+
+# Store PS1 in global scope to not concatenate on each _bashject_set_project
+OLD_PS1="$PS1"
+
+_bashject_set_project() {
+    # Find dir
+    BASHJECT_PRJ_NAME=$1
+    BASHJECT_PRJ_DIR=$(_bashject_get_project_path $BASHJECT_PRJ_NAME)
+    if [ ! -z "$BASHJECT_PRJ_DIR" ]; then
+        export BASHJECT_PRJ_DIR
+        export BASHJECT_PRJ_NAME
+        cd $BASHJECT_PRJ_DIR
+        source $BASHJECT_PRJ_DIR/${BASHJECT_PRJ_FILE}
+        if [ "1" -eq "$BASHJECT_CHANGE_PROMPT" ]; then 
+            export PS1="[$BASHJECT_PRJ_NAME] $OLD_PS1"
+        fi
+    else
+        _bashject_failed_path $BASHJECT_PRJ_NAME
+    fi
+}
+
+_bashject_remove_project() {
+    if [ -f ${BASHJECT_PRJ_STORE} ]; then
+        while read name path; do
+            if [ ! "$1" = "$name" ]; then
+                echo "$name $path" >> ${BASHJECT_TMP}
+            fi
+        done < ${BASHJECT_PRJ_STORE}
+        mv ${BASHJECT_TMP} ${BASHJECT_PRJ_STORE}
+    fi
+    return 0
+}
+
+_bashject_rename_project() {
+    if [ -f ${BASHJECT_PRJ_STORE} ]; then
+        while read name path; do
+            if [ "$1" = "$name" ]; then
+                echo "$2 $path" >> ${BASHJECT_TMP}
+            else
+                echo "$name $path" >> ${BASHJECT_TMP}
+            fi
+        done < ${BASHJECT_PRJ_STORE}
+        mv ${BASHJECT_TMP} ${BASHJECT_PRJ_STORE}
+    fi
+    return 0
+}
+
+_bashject_get_project_names() {
+    local NAMES=""
+    if [ -f ${BASHJECT_PRJ_STORE} ]; then
+        while read name path; do
+            NAMES="$NAMES $name"
+        done < ${BASHJECT_PRJ_STORE}
+        echo ${NAMES}
+    fi
+    return 0
+}
+
+_bashject_get_project_list() {
+    local NAMES=""
+    if [ -f ${BASHJECT_PRJ_STORE} ]; then
+        while read name path; do
+            echo $name
+        done < ${BASHJECT_PRJ_STORE}
+    fi
+    return 0
+}
+
+function _bashject_cd_project() {
+	cd $BASHJECT_PRJ_DIR
+}
+
+# Frontend
+function bashject {
+    fun=$1
+    shift
+    case "$fun" in
+        a|add)       _bashject_add_project           "$@" ; return $? ;;
+        s|set)       _bashject_set_project           "$@" ; return $? ;;
+        source)      _bashject_source_project        "$@" ; return $? ;;
+        e|edit)      _bashject_edit_project          "$@" ; return $? ;;
+        rm|remove)   _bashject_remove_project        "$@" ; return $? ;;
+        rename)      _bashject_rename_project        "$@" ; return $? ;;
+        path)        _bashject_get_project_path      "$@" ; return $? ;;
+        names)       _bashject_get_project_names     "$@" ; return $? ;;
+        list)        _bashject_get_project_list      "$@" ; return $? ;;
+        cd)          _bashject_cd_project            "$@" ; return $? ;;
+        help)        _bashject_help                  "$@" ; return $? ;;
+        "") 
+            echo "No command provided. Available:"
+            for cmd in $(_bashject_get_commands); do
+                echo "  - $cmd "
+            done
+            return 1
+            ;;
+        *)
+            echo "Unknown command: $fun" >&2
+            return 1
+            ;;
+    esac
+} 
+
+
+# Define autocompletion functions 
+
+_bashject_complete_project_name()
+{
+        local cur
+        _get_comp_words_by_ref cur
+        COMPREPLY=()
+        COMPREPLY=( $(compgen -W "$(_bashject_get_project_names)" -- ${cur}) ) 
+        return 0
+} 
+
+_bashject_complete_command()
+{
+        local cur
+        _get_comp_words_by_ref cur
+        COMPREPLY=()
+        COMPREPLY=($(compgen -W "$(_bashject_get_commands)" -- "$cur"))
+        return 0
+} 
+
+function _bashject_complete() {
+    local cur
+    _get_comp_words_by_ref cur
+    COMPREPLY=()
+    # Complete command name 
+    if [ $COMP_CWORD -eq 1 ]; then
+        _bashject_complete_command 1
+    elif [ $COMP_CWORD -eq 2 ]; then
+        case ${COMP_WORDS[1]} in
+            s|set|source|edit|path|rm|remove|rename)       _bashject_complete_project_name           1 ;;
+            help)                                          _bashject_complete_command                1 ;;
+            names|list|cd)                                                                             ;;
+            a|add)                                                                                     ;;
+        esac
+    elif [ $COMP_CWORD -eq 3 ]; then
+        case ${COMP_WORDS[1]} in
+            a|add)                                         _filedir                                  1 ;;
+        esac
+    fi
+} 
+
+complete -F _bashject_complete bashject 
+
+if [ ! -z "${BASHJECT_ALIAS}" ]; then
+    alias ${BASHJECT_ALIAS}='bashject'
+    complete -F _bashject_complete ${BASHJECT_ALIAS} 
+fi
+
+
