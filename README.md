@@ -49,6 +49,7 @@ Here's the help message:
             - BASHJECT_CHANGE_PROMPT            # 1 to change the prompt to '[ BASHJECT_PRJ_NAME ] PS1' > on 'bashject set'  (default: '', current: '1')
             - BASHJECT_ALIAS                    # Name of an alias for bashject to define (i.e: 'bj'), autocompletion will be handled (default: '', current: 'bj')
             - BASHJECT_TMP                      # Temp file used for rename and remove operations (default: '', current: '/tmp/bashject.tmp')
+            - BASHJECT_CD_WHEN_SET              # Change for project directory when set command is called (default: '1', current: '1')
 
 To use it, just source it from your main <em>bashrc</em>:
 

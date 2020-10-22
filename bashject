@@ -16,6 +16,7 @@ _bashject_get_config_default() {
     local BASHJECT_CHANGE_PROMPT_DEFAULT="1"
     local BASHJECT_ALIAS_DEFAULT=""
     local BASHJECT_TMP_DEFAULT="/tmp/bashject.tmp"
+    local BASHJECT_CD_WHEN_SET_DEFAULT="1"
     local VAR="BASHJECT_$1_DEFAULT"
     echo ${!VAR}
 }
@@ -27,6 +28,7 @@ BASHJECT_PRJ_FILE=${BASHJECT_PRJ_FILE:-$(_bashject_get_config_default PRJ_FILE)}
 BASHJECT_CHANGE_PROMPT=${BASHJECT_CHANGE_PROMPT:-$(_bashject_get_config_default CHANGE_PROMPT)}
 BASHJECT_ALIAS=${BASHJECT_ALIAS:-$(_bashject_get_config_default ALIAS)}
 BASHJECT_TMP=${BASHJECT_TMP:-$(_bashject_get_config_default TMP)}
+BASHJECT_CD_WHEN_SET=${BASHJECT_CD_WHEN_SET:-$(_bashject_get_config_default CD_WHEN_SET)}
 
 function _bashject_help() {
     local BASHJECT_HELP_ADD="bashject a|add      name path     # Adds a project"
@@ -71,6 +73,7 @@ function _bashject_help() {
         - BASHJECT_CHANGE_PROMPT            # 1 to change the prompt to '[ BASHJECT_PRJ_NAME ] PS1' > on 'bashject set'  (default: '${BASHJECT_CHANGE_PROMPT_DEFAULT}', current: '${BASHJECT_CHANGE_PROMPT}')
         - BASHJECT_ALIAS                    # Name of an alias for bashject to define (i.e: 'bj'), autocompletion will be handled (default: '${BASHJECT_ALIAS_DEFAULT}', current: '${BASHJECT_ALIAS}')
         - BASHJECT_TMP                      # Temp file used for rename and remove operations (default: '${BASHJECT_TMP_DEFAULT}', current: '${BASHJECT_TMP}')
+        - BASHJECT_CD_WHEN_SET              # Change for project directory when set command is called (default: '${BASHJECT_CD_WHEN_SET_DEFAULT}', current: '${BASHJECT_CD_WHEN_SET}')
 EOF
 
     if [ -z $1 ]; then 
@@ -174,7 +177,9 @@ _bashject_set_project() {
     if [ ! -z "$BASHJECT_PRJ_DIR" ]; then
         export BASHJECT_PRJ_DIR
         export BASHJECT_PRJ_NAME
-        cd $BASHJECT_PRJ_DIR
+        if [ "1" -eq "$BASHJECT_CD_WHEN_SET" ]; then
+            cd $BASHJECT_PRJ_DIR
+        fi
         source $BASHJECT_PRJ_DIR/${BASHJECT_PRJ_FILE}
         if [ "1" -eq "$BASHJECT_CHANGE_PROMPT" ]; then 
             export PS1="[$BASHJECT_PRJ_NAME] $OLD_PS1"
